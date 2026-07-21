@@ -45,8 +45,53 @@ jobs:
       - name: Pytest (unit tests, coverage gate enforced)
         run: pytest
 
-  publish:
+  publish-testpypi:
     needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/autolina-scraper/
+    permissions:
+      id-token: write # required for PyPI trusted publishing (OIDC) — no API token stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  smoke-test-testpypi:
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Wait for TestPyPI to index the new release
+        run: sleep 30
+
+      - name: Install the just-published version from TestPyPI and smoke-test the CLI
+        # --extra-index-url pulls this package's own dependencies (requests, selectolax)
+        # from real PyPI, since TestPyPI doesn't mirror them; pinning to the exact
+        # version tagged makes sure we're testing what was just published, not
+        # whatever happened to be latest.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "autolina-scraper==${VERSION}"
+          autolina-scraper --version
+
+  publish-pypi:
+    needs: smoke-test-testpypi
     runs-on: ubuntu-latest
     environment:
       name: pypi

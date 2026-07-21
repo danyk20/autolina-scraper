@@ -68,6 +68,41 @@ parameter that silently does nothing is worse than not having the filter.
 - Keep the User-Agent honest — no browser spoofing, no impersonating a named
   bot (Googlebot, ClaudeBot, ...) this project isn't.
 
+## Releasing
+
+Releases are tag-triggered and fully automated via
+[.github/workflows/release.yml](.github/workflows/release.yml) — maintainers
+only, not something a contributing PR needs to touch:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+That runs, in order: `build` (sdist + wheel, uploaded once as an artifact and
+reused by every later job) → `test` (full unit suite, coverage gate) →
+`publish-testpypi` → `smoke-test-testpypi` (installs the just-published
+version from TestPyPI into a clean environment and runs
+`autolina-scraper --version`) → `publish-pypi`. Publishing to both indexes
+uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/)
+(OIDC) — no API tokens stored anywhere. If the TestPyPI smoke test fails, the
+real PyPI publish never runs.
+
+One-time setup for a maintainer's own fork/release (already done for this
+repo): a pending publisher registered on both
+[test.pypi.org](https://test.pypi.org/manage/account/publishing/) and
+[pypi.org](https://pypi.org/manage/account/publishing/) (project name
+`autolina-scraper`, owner `danyk20`, repository `autolina-scraper`, workflow
+`release.yml`, environment `testpypi` / `pypi` respectively), plus matching
+`testpypi` and `pypi` environments under the repo's **Settings → Environments**
+(the environment name is what PyPI's OIDC check matches against — it has to
+be exact).
+
+Bump the version in **both** `pyproject.toml` (`[project].version`) and
+`src/autolina_scraper/__init__.py` (`__version__`) before tagging — they're
+not derived from the tag automatically. Update `CHANGELOG.md`, moving
+`Unreleased` entries under a new `[X.Y.Z] - YYYY-MM-DD` heading.
+
 ## Commit / PR conventions
 
 - Keep unit tests offline (mock HTTP via `responses`) — no test should require
