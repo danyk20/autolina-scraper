@@ -74,21 +74,31 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Wait for TestPyPI to index the new release
-        run: sleep 30
-
       - name: Install the just-published version from TestPyPI and smoke-test the CLI
         # --extra-index-url pulls this package's own dependencies (requests, selectolax)
         # from real PyPI, since TestPyPI doesn't mirror them; pinning to the exact
         # version tagged makes sure we're testing what was just published, not
-        # whatever happened to be latest.
+        # whatever happened to be latest. TestPyPI's index can take a while to
+        # catch up after a publish (observed: >30s), so retry with backoff
+        # instead of a single fixed sleep + single attempt.
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          pip install \
-            --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
-            "autolina-scraper==${VERSION}"
-          autolina-scraper --version
+          attempts=15
+          for attempt in $(seq 1 "$attempts"); do
+            if pip install \
+                --index-url https://test.pypi.org/simple/ \
+                --extra-index-url https://pypi.org/simple/ \
+                "autolina-scraper==${VERSION}"; then
+              autolina-scraper --version
+              exit 0
+            fi
+            if [ "$attempt" -eq "$attempts" ]; then
+              echo "::error::autolina-scraper==${VERSION} never appeared on TestPyPI's index after ${attempts} attempts"
+              exit 1
+            fi
+            echo "not indexed yet (attempt ${attempt}/${attempts}) — retrying in 20s"
+            sleep 20
+          done
 
   publish-pypi:
     needs: smoke-test-testpypi

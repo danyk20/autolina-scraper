@@ -5,7 +5,7 @@ from autolina_scraper.models import ScrapeResult
 from autolina_scraper.orchestrate import scrape
 from autolina_scraper.search import fetch_listings as search_listings
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = [
     "scrape",

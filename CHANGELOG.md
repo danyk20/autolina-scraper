@@ -6,6 +6,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-21
+
+### Fixed
+
+- Release workflow: the TestPyPI smoke-test step used a fixed 30s wait before
+  checking the index, which wasn't always enough (observed: `v0.3.0`'s
+  release run failed here, correctly blocking the real PyPI publish before
+  it happened). Replaced with a retry-with-backoff loop (up to 15 attempts,
+  20s apart). No code changes beyond this — `v0.3.0` was tagged but never
+  actually published anywhere; this release carries the same changes.
+
 ## [0.3.0] - 2026-07-21
 
 ### Changed
@@ -70,7 +81,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
   lookup stays the fast/offline default, but an unresolved make/model is now
   double-checked live before being reported as unknown.
 
-[Unreleased]: https://github.com/danyk20/autolina-scraper/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/danyk20/autolina-scraper/compare/v0.2.0...v0.3.0
+[Unreleased]: https://github.com/danyk20/autolina-scraper/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/danyk20/autolina-scraper/compare/v0.2.0...v0.3.1
 [0.2.0]: https://github.com/danyk20/autolina-scraper/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/danyk20/autolina-scraper/releases/tag/v0.1.0
