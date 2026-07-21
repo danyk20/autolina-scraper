@@ -124,32 +124,40 @@ def test_fetch_listings_max_results_caps_within_a_single_page() -> None:
 
 
 @responses.activate
-def test_fetch_listings_max_results_stops_pagination_early() -> None:
-    page1 = _page_html(10, [1, 2])
-    page2 = _page_html(10, [3, 4])
+def test_fetch_listings_max_results_still_paginates_fully() -> None:
+    # Getting "the newest N" right requires seeing every carId first — the
+    # site's own default order isn't date-sorted, so a genuinely newer
+    # listing could be sitting on a later page than an older one. max_results
+    # must not cut pagination short at the cost of correctness.
+    page1 = _page_html(6, [1, 2])
+    page2 = _page_html(6, [3, 4])
+    page3 = _page_html(6, [5, 6])
     responses.add(responses.GET, "https://www.autolina.ch/vw/tiguan", body=page1, status=200)
     responses.add(
         responses.GET, "https://www.autolina.ch/vw/tiguan/page/2", body=page2, status=200
+    )
+    responses.add(
+        responses.GET, "https://www.autolina.ch/vw/tiguan/page/3", body=page3, status=200
     )
 
     total, listings = search.fetch_listings(
         http.new_session(), "vw", "tiguan", delay=0, max_results=3
     )
 
-    assert total == 10
-    assert len(listings) == 3
-    assert len(responses.calls) == 2  # never requested page 3, despite total=10
+    assert total == 6
+    assert len(responses.calls) == 3  # all 3 pages fetched, despite max_results=3 < 6
+    assert [listing["carId"] for listing in listings] == [6, 5, 4]  # the 3 newest
 
 
 @responses.activate
 def test_fetch_listings_max_results_does_not_log_a_spurious_pagination_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    html = _page_html(50, [1, 2])
+    html = _page_html(2, [1, 2])
     responses.add(responses.GET, "https://www.autolina.ch/vw/tiguan", body=html, status=200)
 
     with caplog.at_level(logging.WARNING, logger="autolina_scraper"):
-        search.fetch_listings(http.new_session(), "vw", "tiguan", delay=0, max_results=2)
+        search.fetch_listings(http.new_session(), "vw", "tiguan", delay=0, max_results=1)
 
     assert not any("pagination likely shifted" in record.getMessage() for record in caplog.records)
 

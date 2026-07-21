@@ -46,6 +46,26 @@ def test_real_scrape_without_detail_has_fewer_fields_than_with_detail() -> None:
         assert summary_fields <= full_fields
 
 
+def test_real_scrape_orders_listings_newest_first() -> None:
+    result = scrape("aston-martin", "db7", detail=False, delay=0.5)
+
+    ids = [listing["carId"] for listing in result.listings]
+    assert ids == sorted(ids, reverse=True)
+
+
+def test_real_scrape_max_results_returns_the_newest_n() -> None:
+    # Small-inventory model (same one used elsewhere in this file) so this
+    # comparison doesn't mean scraping a large search twice against the
+    # live site.
+    capped = scrape("aston-martin", "db7", detail=False, max_results=3, delay=0.5)
+    uncapped = scrape("aston-martin", "db7", detail=False, delay=0.5)
+
+    assert len(capped.listings) == 3
+    assert capped.total_elements == uncapped.total_elements
+    newest_three_overall = [listing["carId"] for listing in uncapped.listings[:3]]
+    assert [listing["carId"] for listing in capped.listings] == newest_three_overall
+
+
 def test_real_scrape_raises_for_unknown_make() -> None:
     with pytest.raises(ValueError, match="unknown make"):
         scrape("this-make-does-not-exist", "tiguan", delay=0.5)

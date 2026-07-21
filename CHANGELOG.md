@@ -6,6 +6,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-21
+
+### Changed
+
+- `listings`/`rows` are now always ordered **newest-first**, by `carId`
+  descending, instead of the previous price-ascending order. `carId` is an
+  auto-incrementing primary key, so higher id reliably means posted more
+  recently; autolina.ch's search summary has no separate "date posted" field
+  to sort by instead, and its own default result order isn't date-sorted (it
+  mixes in "TOP"/boosted-listing placement).
+- As a consequence, `max_results` now guarantees "the newest N" correctly:
+  since that requires seeing every listing's `carId` before deciding which
+  are newest, the search phase always pages through the full result set
+  first — the early-pagination-stop optimization added in 0.2.0 traded
+  correctness for search-phase request savings and has been reverted. The
+  detail-visit phase (the dominant cost in the original reported case: up to
+  772 requests) is still fully capped, unaffected by this change.
+
 ## [0.2.0] - 2026-07-21
 
 ### Added
@@ -52,6 +70,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
   lookup stays the fast/offline default, but an unresolved make/model is now
   double-checked live before being reported as unknown.
 
-[Unreleased]: https://github.com/danyk20/autolina-scraper/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/danyk20/autolina-scraper/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/danyk20/autolina-scraper/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danyk20/autolina-scraper/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/danyk20/autolina-scraper/releases/tag/v0.1.0

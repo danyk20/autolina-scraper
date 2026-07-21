@@ -18,6 +18,13 @@ Listings are de-duplicated by ``carId`` across pages as a safety net, and the
 loop stops as soon as a page yields zero new ids — the same "boosted listing
 can shift pagination" risk the AutoScout24 reference solved for its API
 applies here too, since result order isn't guaranteed stable between requests.
+
+The returned listings are sorted newest-first by ``carId`` descending —
+autolina.ch doesn't expose a separate "date posted" field on the search
+summary, but ``carId`` is an auto-incrementing primary key, so higher id
+reliably means posted more recently. This is what makes ``max_results``
+actually mean "the newest N" rather than "whatever N the site's own
+(unspecified, TOP-listing-boosted) default order happened to return first".
 """
 
 from __future__ import annotations
@@ -81,19 +88,22 @@ def fetch_listings(
     verbose: bool = True,
     max_results: int | None = None,
 ) -> tuple[int, list[dict[str, Any]]]:
-    """Return ``(reported_total, deduplicated_listings)`` for a make/model search.
+    """Return ``(reported_total, deduplicated_listings)`` for a make/model search,
+    newest-first.
 
     *reported_total* is always the site's true full count, even when
-    *max_results* caps how many listings are actually collected — pagination
-    stops as soon as enough unique listings are in hand, so a narrow
-    ``max_results`` also saves search-phase requests, not just the caller's
-    own downstream (typically detail-fetch) work.
+    *max_results* caps how many listings are actually returned. Getting
+    "the newest N" right requires seeing every listing's ``carId`` first —
+    autolina.ch's own default result order isn't date-sorted (it's mixed with
+    "TOP"/boosted-listing placement), so pagination always runs to completion
+    regardless of *max_results*; only the detail-fetch phase downstream (the
+    dominant cost — see `autolina_scraper.orchestrate.scrape`) is actually
+    capped.
     """
     query = query or {}
     listings_by_id: dict[int, dict[str, Any]] = {}
     reported_total = 0
     page = 1
-    capped = False
 
     while True:
         url = f"{BASE_URL}/{make_key}/{model_key}" + (f"/page/{page}" if page > 1 else "")
@@ -123,14 +133,11 @@ def fetch_listings(
                 reported_total,
             )
 
-        if max_results is not None and len(listings_by_id) >= max_results:
-            capped = True
-            break
         if new_count == 0 or len(listings_by_id) >= reported_total:
             break
         page += 1
 
-    if not capped and len(listings_by_id) != reported_total:
+    if len(listings_by_id) != reported_total:
         logger.warning(
             "collected %d unique listings but the site reported %d — "
             "pagination likely shifted while scraping (promoted listings can "
@@ -139,7 +146,7 @@ def fetch_listings(
             reported_total,
         )
 
-    listings = list(listings_by_id.values())
+    listings = sorted(listings_by_id.values(), key=lambda listing: listing["carId"], reverse=True)
     if max_results is not None:
         listings = listings[:max_results]
     return reported_total, listings

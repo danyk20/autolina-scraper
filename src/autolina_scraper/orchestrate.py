@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import requests
 
@@ -42,16 +41,22 @@ def scrape(
     what's deliberately not the same (no ``category="motorcycle"``, no ``domain``
     other than ``"ch"`` — autolina.ch doesn't have either).
 
-    ``max_results`` caps how many listings are collected and, if ``detail=True``,
-    visited for their full record — a plain, unfiltered search can easily run
-    into the hundreds of listings, each an extra request at ``delay`` seconds
-    apart. ``total_elements`` on the result always reflects the site's true
-    full count regardless of ``max_results``; only ``listings``/``rows`` (and
-    the request cost of getting them) are capped. Listings are collected in
-    whatever order autolina.ch's search returns them in — not guaranteed to be
-    price- or date-sorted — so ``max_results`` is a cost cap, not a "top N by
-    some criterion" selector. For that, use
-    `autolina_scraper.search.fetch_listings` and
+    Listings (``listings``/``rows``) are always ordered newest-first, by
+    ``carId`` descending — autolina.ch's own default search order isn't
+    date-sorted (it's mixed with "TOP"/boosted-listing placement), so this is
+    this library's own deterministic ordering, not something the site
+    guarantees. ``max_results`` caps how many listings are collected and, if
+    ``detail=True``, visited for their full record — a plain, unfiltered
+    search can easily run into the hundreds of listings, each an extra
+    request at ``delay`` seconds apart. ``total_elements`` on the result
+    always reflects the site's true full count regardless of ``max_results``;
+    only ``listings``/``rows`` (and the request cost of getting the latter)
+    are capped — so ``max_results`` gives you the newest N, at the cost of
+    only visiting those N in detail. Getting that right means the search
+    phase always pages through every result first (to see every ``carId``
+    before deciding which are newest); only the detail-visit phase is
+    actually shortened. For any other selection criterion (cheapest first,
+    whatever), use `autolina_scraper.search.fetch_listings` and
     `autolina_scraper.detail.visit_all_listings` directly: sort/filter the
     summary listings yourself, then only run detail visits on the ones you
     actually want.
@@ -149,7 +154,8 @@ def scrape(
             session, listings, delay=delay, verbose=verbose
         )
 
-    listings.sort(key=_price_sort_key)
+    # search.fetch_listings already returns newest-first (by carId descending)
+    # and visit_all_listings preserves that order, so no re-sort needed here.
     rows = [flatten.flatten_listing(listing) for listing in listings]
 
     return ScrapeResult(
@@ -163,11 +169,6 @@ def scrape(
         rows=rows,
         domain=domain,
     )
-
-
-def _price_sort_key(listing: dict[str, Any]) -> tuple[int, float]:
-    price = listing.get("price")
-    return (0, float(price)) if isinstance(price, (int, float)) else (1, 0.0)
 
 
 def _validate_range(low: int | None, high: int | None, name: str) -> None:

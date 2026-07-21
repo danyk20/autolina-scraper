@@ -138,22 +138,23 @@ def test_scrape_max_results_caps_listings_and_only_detail_visits_those() -> None
         "https://www.autolina.ch/vw/tiguan",
         body=_search_page_html(5, [(1, 10000), (2, 20000), (3, 30000), (4, 40000), (5, 50000)]),
     )
+    # max_results keeps the *newest* (highest carId) listings — 5 and 4, not 1 and 2.
     responses.add(
         responses.GET,
-        "https://www.autolina.ch/auto/vw-tiguan/1",
-        body=_detail_page_html(1, "ABC001"),
+        "https://www.autolina.ch/auto/vw-tiguan/5",
+        body=_detail_page_html(5, "ABC005"),
     )
     responses.add(
         responses.GET,
-        "https://www.autolina.ch/auto/vw-tiguan/2",
-        body=_detail_page_html(2, "ABC002"),
+        "https://www.autolina.ch/auto/vw-tiguan/4",
+        body=_detail_page_html(4, "ABC004"),
     )
 
     result = scrape("vw", "tiguan", max_results=2, delay=0)
 
     assert result.total_elements == 5  # true site total, unaffected by the cap
     assert len(result.listings) == len(result.rows) == 2
-    assert {listing["carId"] for listing in result.listings} == {1, 2}
+    assert [listing["carId"] for listing in result.listings] == [5, 4]  # newest first
     # only 2 detail requests fired, not 5 — the whole point of the cap
     detail_calls = [c for c in responses.calls if "/auto/" in c.request.url]
     assert len(detail_calls) == 2
@@ -253,15 +254,17 @@ def test_scrape_falls_back_to_live_probe_for_a_make_missing_from_the_sitemap() -
 
 
 @responses.activate
-def test_scrape_sorts_rows_and_listings_by_price_ascending() -> None:
+def test_scrape_sorts_rows_and_listings_newest_first_by_car_id() -> None:
+    # Deliberately uncorrelated with price/insertion order, so this can't
+    # pass by coincidence: id 5 (newest) has the *lowest* price here.
     _register_catalog(["vw"], {"vw": ["tiguan"]})
     responses.add(
         responses.GET,
         "https://www.autolina.ch/vw/tiguan",
-        body=_search_page_html(2, [(1, 30000), (2, 10000)]),
+        body=_search_page_html(3, [(2, 30000), (5, 10000), (3, 20000)]),
     )
 
     result = scrape("vw", "tiguan", detail=False, delay=0)
 
-    assert [listing["carId"] for listing in result.listings] == [2, 1]
-    assert [row["carId"] for row in result.rows] == ["2", "1"]
+    assert [listing["carId"] for listing in result.listings] == [5, 3, 2]
+    assert [row["carId"] for row in result.rows] == ["5", "3", "2"]

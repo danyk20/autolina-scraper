@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autolina-scraper"
-version = "0.2.0"
+version = "0.3.0"
 description = "Free, keyless Python scraper & library for autolina.ch vehicle listings — any make/model, price/mileage/year filters, CLI + library API, MIT licensed."
 readme = "README.md"
 license = { file = "LICENSE" }

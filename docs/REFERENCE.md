@@ -122,28 +122,34 @@ unknown-model error). Raises `requests` exceptions on unrecoverable network
 errors, and `autolina_scraper.http.ChallengeDetectedError` if a Cloudflare
 challenge is unexpectedly encountered.
 
-### Capping cost: `max_results`, or splitting search from detail
+### Ordering, and capping cost: `max_results`, or splitting search from detail
+
+`listings`/`rows` are always **newest-first**, by `carId` descending —
+autolina.ch's own default search order isn't date-sorted (it mixes in
+"TOP"/boosted-listing placement), so this is this library's own deterministic
+ordering, not something the site guarantees. `carId` is an auto-incrementing
+primary key, so higher id reliably means posted more recently; there's no
+separate "date posted" field on the search summary to sort by instead.
 
 A plain, unfiltered `scrape()` call can return hundreds of listings, each
 costing one extra request in the detail phase (at `delay` seconds apart) —
 expensive for periodic/scheduled scanning. Two ways to bound that, matching
 the two approaches the AutoScout24 and `ricardo-scraper` siblings each took:
 
-- **`max_results`** (simplest): caps how many listings are collected and,
-  if `detail=True`, visited for their full record. `total_elements` always
-  reflects the site's true full count regardless. Pagination itself stops
-  early once enough candidates are in hand, so a narrow `max_results` also
-  saves search-phase requests, not just detail-phase ones. Listings are
-  collected in whatever order autolina.ch's search returns them in — **not**
-  guaranteed to be price- or date-sorted — so this is a cost cap, not a
-  "top N by some criterion" selector.
+- **`max_results`** (simplest): caps how many (newest) listings are collected
+  and, if `detail=True`, visited for their full record. `total_elements`
+  always reflects the site's true full count regardless. Getting "the newest
+  N" right requires seeing every listing's `carId` first, so the search phase
+  always pages through every result — only the detail-visit phase (the
+  dominant cost) is actually shortened.
 - **Split search from detail** (more control): `autolina_scraper.search_listings()`
   and `autolina_scraper.visit_all_listings()` are the same two phases
   `scrape()` composes internally, exposed standalone — mirroring the
   AutoScout24 reference's own `search_listings()`/`visit_all_listings()` split.
-  Fetch the cheap summary phase, sort/filter/slice the candidate list
-  yourself (cheapest first, newest `carId` first, whatever suits you), then
-  only run `visit_all_listings()` on the ones actually worth a detail visit:
+  Fetch the cheap summary phase (already newest-first), re-sort/filter/slice
+  the candidate list yourself by any other criterion (cheapest first,
+  whatever suits you), then only run `visit_all_listings()` on the ones
+  actually worth a detail visit:
 
   ```python
   from autolina_scraper import search_listings, visit_all_listings
@@ -212,7 +218,7 @@ class ScrapeResult:
     category: str           # "car" — the only supported value
     total_elements: int     # number of unique listings found by the search phase
     listings: list[dict]    # parsed listing records — see "Data structure" below
-    rows: list[dict]        # flattened dicts, one per listing, CSV-ready, sorted by price ascending
+    rows: list[dict]        # flattened dicts, one per listing, CSV-ready, sorted newest-first
     domain: str              # "ch" — the only supported value
 
     def to_csv(self, path: str) -> None: ...   # writes self.rows

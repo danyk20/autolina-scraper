@@ -25,7 +25,7 @@ id, then visit each one individually for the full record (VIN, energy data,
 standard/optional equipment, dealer contact info, images, ...). Every spec row
 and equipment item the site renders is kept — nested objects are flattened
 into `parent_child` CSV columns, lists are joined into semicolon-separated
-cells — nothing is silently dropped.
+cells — nothing is silently dropped. Results are always ordered newest-first.
 
 **🤖 Robot-friendly.** This project is explicitly intended to be run, read,
 imported, or adapted by AI agents and bots, same as a human developer — see
