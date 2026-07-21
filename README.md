@@ -1,7 +1,7 @@
 # Autolina Scraper
 
 [![CI](https://github.com/danyk20/autolina-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/danyk20/autolina-scraper/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/autolina-scraper)](https://pypi.org/project/autolina-scraper/)
+[![PyPI](https://img.shields.io/pypi/v/autolina-scraper?cacheSeconds=300)](https://pypi.org/project/autolina-scraper/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 
