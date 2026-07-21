@@ -61,6 +61,14 @@ def _detail_page_html(car_id: int, chassis_no: str) -> str:
     """
 
 
+# What autolina.ch actually serves for a made-up make/model slug: a 200,
+# unscoped catalog page — not a 404 — confirmed live. probe_make/probe_model
+# must reject this rather than treat any 200 as valid.
+_GENERIC_FALLBACK_PAGE = (
+    "<html><body><h1>Occasion oder Neuwagen kaufen - 97'370 Autos</h1></body></html>"
+)
+
+
 @responses.activate
 def test_scrape_end_to_end_with_detail() -> None:
     _register_catalog(["vw"], {"vw": ["tiguan"]})
@@ -128,24 +136,86 @@ def test_scrape_rejects_unsupported_category() -> None:
 
 
 @responses.activate
-def test_scrape_unknown_make_raises_before_any_search_call() -> None:
+def test_scrape_unknown_make_raises_after_live_probe_also_fails() -> None:
     _register_catalog(["vw"], {"vw": ["tiguan"]})
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/totallyfake",
+        body=_GENERIC_FALLBACK_PAGE,
+    )
     with pytest.raises(ValueError, match="unknown make"):
         scrape("totallyfake", "tiguan", delay=0)
 
 
 @responses.activate
-def test_scrape_make_with_no_known_models_raises() -> None:
+def test_scrape_make_with_no_known_models_raises_after_live_probe_also_fails() -> None:
     _register_catalog(["vw", "obscure-make"], {"vw": ["tiguan"]})
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/obscure-make/anything",
+        body=_GENERIC_FALLBACK_PAGE,
+    )
     with pytest.raises(ValueError, match="no known models"):
         scrape("obscure-make", "anything", delay=0)
 
 
 @responses.activate
-def test_scrape_unknown_model_lists_valid_models() -> None:
+def test_scrape_unknown_model_lists_valid_models_after_live_probe_also_fails() -> None:
     _register_catalog(["vw"], {"vw": ["tiguan", "golf"]})
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/vw/not-a-model",
+        body=_GENERIC_FALLBACK_PAGE,
+    )
     with pytest.raises(ValueError, match="valid models"):
         scrape("vw", "not-a-model", delay=0)
+
+
+@responses.activate
+def test_scrape_falls_back_to_live_probe_for_a_model_missing_from_the_sitemap() -> None:
+    # The real bug this guards against: Tesla Model Y has live listings but
+    # was missing from autolina.ch's model1.xml.gz sitemap.
+    _register_catalog(["tesla"], {"tesla": ["model-s", "model-x", "model-3"]})
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/tesla/model-y",
+        body="<html><body><h1>TESLA MODEL Y Occasion - 44 Autos in der Schweiz</h1></body></html>",
+    )
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/tesla/model-y",
+        body=_search_page_html(1, [(1, 50000)]),
+    )
+
+    result = scrape("Tesla", "model-y", detail=False, delay=0)
+
+    assert result.model_key == "model-y"
+    assert len(result.listings) == 1
+
+
+@responses.activate
+def test_scrape_falls_back_to_live_probe_for_a_make_missing_from_the_sitemap() -> None:
+    _register_catalog(["vw"], {"vw": ["tiguan"]})
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/polestar",
+        body="<html><body><h1>POLESTAR Occasion - 3 Autos in der Schweiz</h1></body></html>",
+    )
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/polestar/2",
+        body="<html><body><h1>POLESTAR 2 Occasion - 3 Autos in der Schweiz</h1></body></html>",
+    )
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/polestar/2",
+        body=_search_page_html(1, [(1, 40000)]),
+    )
+
+    result = scrape("polestar", "2", detail=False, delay=0)
+
+    assert result.make_key == "polestar"
+    assert result.model_key == "2"
 
 
 @responses.activate

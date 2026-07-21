@@ -60,13 +60,38 @@ def scrape(
     session = session or http.new_session()
 
     make_slugs = catalog.fetch_make_slugs(session, delay=delay)
-    resolved_make = catalog.resolve_make(make, make_slugs)
+    try:
+        resolved_make = catalog.resolve_make(make, make_slugs)
+    except ValueError:
+        # autolina.ch's sitemap can lag behind the live site (confirmed: newly
+        # added makes/models can be missing from it) — fall back to a live
+        # probe before concluding the make genuinely doesn't exist.
+        probed_make = catalog.probe_make(session, make, delay=delay)
+        if probed_make is None:
+            raise
+        if verbose:
+            logger.info(
+                "make %r not in the sitemap catalog, but resolved live", probed_make.key
+            )
+        resolved_make = probed_make
 
     model_slugs_by_make = catalog.fetch_make_model_slugs(session, delay=delay)
     model_slugs = model_slugs_by_make.get(resolved_make.key, [])
-    if not model_slugs:
-        raise ValueError(f"make {resolved_make.key!r} has no known models")
-    resolved_model = catalog.resolve_model(model, resolved_make.key, model_slugs)
+    try:
+        if not model_slugs:
+            raise ValueError(f"make {resolved_make.key!r} has no known models in the sitemap")
+        resolved_model = catalog.resolve_model(model, resolved_make.key, model_slugs)
+    except ValueError:
+        probed_model = catalog.probe_model(
+            session, model, resolved_make.key, resolved_make.name, delay=delay
+        )
+        if probed_model is None:
+            raise
+        if verbose:
+            logger.info(
+                "model %r not in the sitemap catalog, but resolved live", probed_model.key
+            )
+        resolved_model = probed_model
 
     query = search.build_query(
         price_from=price_from,
@@ -85,11 +110,16 @@ def scrape(
         verbose=verbose,
     )
 
+    # "make" comes straight from the listing's own title attribute (e.g.
+    # "MERCEDES-BENZ") and is more authoritative than the slug-derived
+    # heuristic for names that don't round-trip cleanly through slugify.
+    # There's no equivalent plain "model" field to prefer over
+    # resolved_model.name — search cards only carry the per-listing trim
+    # name (modelType, e.g. "Tiguan R-Line"), not the stable base model.
     make_name = resolved_make.name
-    model_name = resolved_model.name
     if listings:
-        make_name = listings[0].get("makeName", make_name)
-        model_name = listings[0].get("modelName", model_name)
+        make_name = listings[0].get("make") or make_name
+    model_name = resolved_model.name
 
     default_slug = f"{resolved_make.key}-{resolved_model.key}"
     for listing in listings:

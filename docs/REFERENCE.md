@@ -46,7 +46,18 @@ long list of brittle per-field CSS positions:
 - **Make/model catalog**: sourced from autolina.ch's own published sitemap
   (`sitemap/general1.xml.gz` for makes, `sitemap/model1.xml.gz` for make/model
   pairs) — the compliant, publisher-endorsed equivalent of AutoScout24's
-  `/v1/makes` API.
+  `/v1/makes` API. **The sitemap can lag behind the live site** — confirmed:
+  Tesla's Model Y has real listings but was missing from `model1.xml.gz`. So
+  make/model resolution is two-tier: the sitemap lookup (`resolve_make`/
+  `resolve_model`) is the fast, offline-testable default, and only when it
+  fails does `scrape()` fall back to a live request
+  (`catalog.probe_make`/`probe_model`) — fetching `/{candidate}` or
+  `/{make}/{candidate}` directly and accepting it only if the page's `<h1>`
+  is genuinely scoped to that make (autolina.ch's router falls back to its
+  generic, unscoped catalog page for a made-up slug rather than 404ing, so a
+  bare "did it return 200" check isn't enough — this also means a real model
+  with zero current listings, like a rare classic, resolves correctly instead
+  of being reported as unknown).
 
 One quirk had to be worked around, same as the AutoScout24 reference: without
 an explicit sort order, a "boosted"/`TOP` listing can rotate into view between

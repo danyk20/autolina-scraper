@@ -22,6 +22,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   to bypass) Cloudflare bot-detection challenges.
 - 100% unit test coverage against real saved HTML fixtures; e2e suite against
   the live site.
+- Live-probe fallback (`catalog.probe_make`/`probe_model`) for when a make or
+  model is missing from autolina.ch's sitemap (confirmed real: Tesla's Model Y
+  has live listings but isn't in the site's own `model1.xml.gz`) — the sitemap
+  lookup stays the fast/offline default, but an unresolved make/model is now
+  double-checked live before being reported as unknown.
 
 [Unreleased]: https://github.com/danyk20/autolina-scraper/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/danyk20/autolina-scraper/releases/tag/v0.1.0

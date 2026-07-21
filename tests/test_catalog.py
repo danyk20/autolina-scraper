@@ -125,3 +125,82 @@ def test_fetch_make_model_slugs_skips_make_only_paths() -> None:
     )
     by_make = catalog.fetch_make_model_slugs(http.new_session(), delay=0)
     assert by_make == {"vw": ["tiguan"]}
+
+
+# --- live-probe fallback, for when the sitemap lags behind the live site ---
+# (confirmed real: Tesla's Model Y has live listings but was missing from
+# model1.xml.gz)
+
+_SCOPED_PAGE = "<html><body><h1>TESLA MODEL Y Occasion - 44 Autos</h1></body></html>"
+_UNSCOPED_PAGE = "<html><body><h1>Occasion oder Neuwagen kaufen - 97'370 Autos</h1></body></html>"
+
+
+@responses.activate
+def test_probe_make_accepts_a_page_genuinely_scoped_to_that_make() -> None:
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/tesla",
+        body="<html><body><h1>TESLA Occasion - 174 Autos</h1></body></html>",
+    )
+    resolved = catalog.probe_make(http.new_session(), "tesla", delay=0)
+    assert resolved is not None
+    assert resolved.key == "tesla"
+    assert resolved.name == "TESLA"
+
+
+@responses.activate
+def test_probe_make_rejects_the_generic_unscoped_fallback_page() -> None:
+    responses.add(
+        responses.GET, "https://www.autolina.ch/totallyfake", body=_UNSCOPED_PAGE
+    )
+    assert catalog.probe_make(http.new_session(), "totallyfake", delay=0) is None
+
+
+@responses.activate
+def test_probe_model_accepts_a_page_genuinely_scoped_to_that_make_and_model() -> None:
+    responses.add(
+        responses.GET, "https://www.autolina.ch/tesla/model-y", body=_SCOPED_PAGE
+    )
+    resolved = catalog.probe_model(
+        http.new_session(), "Model Y", "tesla", "TESLA", delay=0
+    )
+    assert resolved is not None
+    assert resolved.key == "model-y"
+    assert resolved.name == "MODEL Y"
+
+
+@responses.activate
+def test_probe_model_accepts_a_real_model_with_zero_current_listings() -> None:
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/tesla/roadster",
+        body="<html><body><h1>TESLA ROADSTER Occasion - 0 Autos</h1></body></html>",
+    )
+    resolved = catalog.probe_model(
+        http.new_session(), "roadster", "tesla", "TESLA", delay=0
+    )
+    assert resolved is not None
+    assert resolved.key == "roadster"
+
+
+@responses.activate
+def test_probe_model_rejects_a_typo_that_falls_back_to_the_generic_page() -> None:
+    responses.add(
+        responses.GET, "https://www.autolina.ch/tesla/not-a-real-model", body=_UNSCOPED_PAGE
+    )
+    resolved = catalog.probe_model(
+        http.new_session(), "not-a-real-model", "tesla", "TESLA", delay=0
+    )
+    assert resolved is None
+
+
+@responses.activate
+def test_probe_model_rejects_a_body_type_filter_page_misidentified_as_a_model() -> None:
+    # /tesla/kombi is a real, 200-returning route (a body-type filter link),
+    # but it's not a model — and it renders the same generic unscoped page as
+    # a typo, not a "TESLA KOMBI" page, so it's correctly rejected too.
+    responses.add(
+        responses.GET, "https://www.autolina.ch/tesla/kombi", body=_UNSCOPED_PAGE
+    )
+    resolved = catalog.probe_model(http.new_session(), "kombi", "tesla", "TESLA", delay=0)
+    assert resolved is None

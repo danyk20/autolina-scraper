@@ -12,6 +12,13 @@ Display names (``VW``, `"TIGUAN"``, ...) aren't in the sitemap — those come ba
 authoritatively in every search result (``makeName``/``modelName`` fields), so
 this module only needs to resolve a user-supplied make/model into the URL slug
 pair used to build every subsequent request.
+
+**The sitemap can lag behind the live site** — confirmed: Tesla's Model Y has
+real listings live but isn't in ``model1.xml.gz``. So `resolve_make`/
+`resolve_model` are pure, offline, sitemap-only lookups (fast, and unit
+testable without a network); `probe_make`/`probe_model` are a live fallback
+callers should try when the pure lookup fails, before concluding the make/model
+genuinely doesn't exist — see `autolina_scraper.orchestrate.scrape`.
 """
 
 from __future__ import annotations
@@ -23,7 +30,7 @@ from xml.etree import ElementTree
 
 import requests
 
-from autolina_scraper import http
+from autolina_scraper import htmlparse, http
 
 BASE_URL = "https://www.autolina.ch"
 _SITEMAP_MAKES = f"{BASE_URL}/sitemap/general1.xml.gz"
@@ -124,3 +131,48 @@ def resolve_model(model: str, make_key: str, model_slugs: list[str]) -> Resolved
     raise ValueError(
         f"unknown model {model!r} for make {make_key!r}{hint}\nvalid models: {valid}"
     )
+
+
+def probe_make(session: requests.Session, make: str, *, delay: float = 1.0) -> ResolvedMake | None:
+    """Live fallback for when *make* isn't in the (possibly stale) sitemap.
+
+    Requests ``/{candidate-slug}`` directly and accepts it only if the
+    rendered page is genuinely scoped to that make — autolina.ch's router
+    falls back to its generic, unscoped catalog page for a made-up slug
+    rather than 404ing, so a naive "did it return 200" check isn't enough.
+    """
+    candidate_slug = _normalize(make)
+    display_name = slug_to_display_name(candidate_slug)
+    response = http.get(session, f"{BASE_URL}/{candidate_slug}", delay=delay)
+    if _renders_as(response.text, display_name):
+        return ResolvedMake(key=candidate_slug, name=display_name)
+    return None
+
+
+def probe_model(
+    session: requests.Session,
+    model: str,
+    make_key: str,
+    make_display_name: str,
+    *,
+    delay: float = 1.0,
+) -> ResolvedModel | None:
+    """Live fallback for when *model* isn't in the (possibly stale) sitemap.
+
+    Same idea as `probe_make`: request ``/{make_key}/{candidate-slug}``
+    directly and only accept it if the page is genuinely scoped to that
+    make/model — this correctly accepts a real model with zero current
+    listings (e.g. a rare model) while rejecting a typo, since an invalid
+    combination falls back to a generic, unscoped page rather than 404ing.
+    """
+    candidate_slug = _normalize(model)
+    response = http.get(session, f"{BASE_URL}/{make_key}/{candidate_slug}", delay=delay)
+    if _renders_as(response.text, make_display_name):
+        return ResolvedModel(key=candidate_slug, name=slug_to_display_name(candidate_slug))
+    return None
+
+
+def _renders_as(html: str, expected_prefix: str) -> bool:
+    tree = htmlparse.parse(html)
+    h1_text = htmlparse.clean_text(tree.css_first("h1"))
+    return h1_text.upper().startswith(expected_prefix.upper())
