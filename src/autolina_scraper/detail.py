@@ -4,8 +4,10 @@ Fetches ``/auto/{slug}/{id}`` and parses the rendered page into a flat dict:
 every ``.details-row``/``.sub-details-grid``/``.energy-data-row`` label-value
 pair (specs, energy data, fuel/transmission/drivetrain/condition/colour — see
 :mod:`autolina_scraper.htmlparse` for how these are extracted generically),
-both equipment lists, the dealer/seller card, the image gallery, and the
-posted-date/view-count line.
+both equipment lists, the dealer/seller card, the image gallery, the seller's
+free-text description (``.description-row`` — only present on some listings,
+mostly private-seller ones; dealer-posted listings usually skip it), the ad's
+own headline (``.title-row h2``), and the posted-date/view-count line.
 """
 
 from __future__ import annotations
@@ -61,6 +63,14 @@ def fetch_detail(
     images = _extract_images(tree)
     if images:
         data["images"] = images
+
+    ad_title = htmlparse.clean_text(tree.css_first(".title-row h2"))
+    if ad_title:
+        data["adTitle"] = ad_title
+
+    description = htmlparse.clean_text(tree.css_first(".description-row p"))
+    if description:
+        data["beschreibung"] = description
 
     data.update(_extract_posting_meta(html))
     return data

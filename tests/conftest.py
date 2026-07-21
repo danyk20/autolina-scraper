@@ -35,6 +35,11 @@ def detail_used_car() -> str:
     return read_fixture("detail_used_car.html")
 
 
+@pytest.fixture
+def detail_private_seller_with_description() -> str:
+    return read_fixture("detail_private_seller_with_description.html")
+
+
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unit tests never actually wait — they exercise the retry/pacing *logic*, not real time."""

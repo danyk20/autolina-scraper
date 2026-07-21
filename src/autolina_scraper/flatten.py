@@ -25,6 +25,7 @@ PINNED_COLUMNS: Final = (
     "url",
     "make",
     "modelType",
+    "adTitle",
     "price",
     "previousPrice",
     "neupreis",

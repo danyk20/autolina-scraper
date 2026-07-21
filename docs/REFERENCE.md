@@ -214,16 +214,31 @@ whether detail mode ran:
   `energieeffizienz`/`co2_emission` (energy data), `optionale_ausstattung`/
   `serienmaessige_ausstattung` (equipment lists), `dealer` (nested: `name`,
   `address`, `phone`, `mapsUrl`, `infopageUrl`), `images` (list of full-size
-  photo URLs), `hitCount`, and `lastUpdatedDateLabel`. In this shape, the
-  `getriebeart`/`treibstoff`/`fahrzeugzustand`/`farbe_aussen_innen` columns
-  set by the summary phase are refined in place with the detail page's own
-  (equally human-readable) values rather than duplicated under new names.
+  photo URLs), `hitCount`, `lastUpdatedDateLabel`, `adTitle` (the seller's own
+  ad headline, e.g. `"CH Fahrzeug mit 4 Jahre Werksgarantie"`), and
+  `beschreibung` (the seller's free-text description — present on many
+  private-seller listings, commonly absent on dealer-posted ones; only set
+  when the listing actually has one, never an empty string). In this shape,
+  the `getriebeart`/`treibstoff`/`fahrzeugzustand`/`farbe_aussen_innen`
+  columns set by the summary phase are refined in place with the detail
+  page's own (equally human-readable) values rather than duplicated under new
+  names.
 
 There is no fixed/versioned schema published by autolina.ch for these objects
 — the tables above reflect the fields observed in practice as of this
 writing, and the exact detail-page field set varies per listing (a listing
 missing a spec row simply won't have that column). Treat unknown/missing
 fields defensively (`.get(...)`, not `[...]`).
+
+**Known limitation:** each listing's optional 360°/walkaround video
+(`phyronCarUrl` in the site's own internal representation) is loaded by
+client-side JavaScript on demand and isn't present anywhere in the
+server-rendered HTML — it can't be recovered without executing JS, which is
+out of scope for this project (see [Compliance](#compliance-robotstxt-and-cloudflare)).
+Similarly, the image gallery (`images`) reflects only the photos the server
+includes in the initial render (commonly 7), not the full set a real browser
+lazy-loads on scroll — still every photo this scraper can reach without
+executing JS.
 
 ### CSV (`result.rows` / the `.csv` file)
 

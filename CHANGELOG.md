@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Detail parsing was silently missing the seller's free-text description
+  (`beschreibung`) and the ad's own headline (`adTitle`) — both are now
+  extracted from `.description-row`/`.title-row h2`. The description in
+  particular is common on private-seller listings (rarer on dealer-posted
+  ones, which is why earlier spot-checks during development missed it).
+
 ## [0.1.0] - 2026-07-21
 
 ### Added
