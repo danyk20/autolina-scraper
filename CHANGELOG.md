@@ -6,6 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-21
+
+### Added
+
+- `max_results` on `scrape()`: caps how many listings are collected and
+  detail-visited, without affecting `total_elements` (the site's true full
+  count). Pagination itself stops early once enough candidates are in hand,
+  saving search-phase requests too, not just detail-phase ones.
+- `search_listings()`/`fetch_detail()`/`visit_all_listings()` now importable
+  directly from the top-level `autolina_scraper` package — the search and
+  detail phases `scrape()` composes internally, exposed standalone so callers
+  can sort/filter/slice the candidate list themselves (e.g. cheapest first)
+  before choosing which listings are worth a detail visit. Mirrors the
+  AutoScout24 reference's own `search_listings()`/`visit_all_listings()` split.
+- `--max-results` CLI flag.
+
 ### Fixed
 
 - Detail parsing was silently missing the seller's free-text description
@@ -36,5 +52,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
   lookup stays the fast/offline default, but an unresolved make/model is now
   double-checked live before being reported as unknown.
 
-[Unreleased]: https://github.com/danyk20/autolina-scraper/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/danyk20/autolina-scraper/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/danyk20/autolina-scraper/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/danyk20/autolina-scraper/releases/tag/v0.1.0

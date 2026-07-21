@@ -30,6 +30,7 @@ def scrape(
     mileage_to: int | None = None,
     year_from: int | None = None,
     year_to: int | None = None,
+    max_results: int | None = None,
     delay: float = 1.0,
     verbose: bool = True,
     session: requests.Session | None = None,
@@ -41,10 +42,25 @@ def scrape(
     what's deliberately not the same (no ``category="motorcycle"``, no ``domain``
     other than ``"ch"`` — autolina.ch doesn't have either).
 
+    ``max_results`` caps how many listings are collected and, if ``detail=True``,
+    visited for their full record — a plain, unfiltered search can easily run
+    into the hundreds of listings, each an extra request at ``delay`` seconds
+    apart. ``total_elements`` on the result always reflects the site's true
+    full count regardless of ``max_results``; only ``listings``/``rows`` (and
+    the request cost of getting them) are capped. Listings are collected in
+    whatever order autolina.ch's search returns them in — not guaranteed to be
+    price- or date-sorted — so ``max_results`` is a cost cap, not a "top N by
+    some criterion" selector. For that, use
+    `autolina_scraper.search.fetch_listings` and
+    `autolina_scraper.detail.visit_all_listings` directly: sort/filter the
+    summary listings yourself, then only run detail visits on the ones you
+    actually want.
+
     Raises ``ValueError`` immediately, before any network call, for an inverted
-    range or an unsupported ``domain``/``category``; raises ``ValueError`` if
-    ``make``/``model`` can't be resolved (listing valid models for an unknown
-    model); raises ``requests`` exceptions on unrecoverable network errors.
+    range, a non-positive ``max_results``, or an unsupported
+    ``domain``/``category``; raises ``ValueError`` if ``make``/``model`` can't
+    be resolved (listing valid models for an unknown model); raises
+    ``requests`` exceptions on unrecoverable network errors.
     """
     if domain != _SUPPORTED_DOMAIN:
         raise ValueError(f"unsupported domain {domain!r} — autolina.ch only has 'ch'")
@@ -56,6 +72,8 @@ def scrape(
     _validate_range(price_from, price_to, "price")
     _validate_range(mileage_from, mileage_to, "mileage")
     _validate_range(year_from, year_to, "year")
+    if max_results is not None and max_results <= 0:
+        raise ValueError(f"max_results must be positive, got {max_results}")
 
     session = session or http.new_session()
 
@@ -108,6 +126,7 @@ def scrape(
         query=query,
         delay=delay,
         verbose=verbose,
+        max_results=max_results,
     )
 
     # "make" comes straight from the listing's own title attribute (e.g.
@@ -126,10 +145,9 @@ def scrape(
         listing["url"] = detail_mod.listing_url(listing.get("slug", default_slug), listing["carId"])
 
     if detail:
-        listings = [
-            _fetch_one_detail(session, listing, index, len(listings), delay=delay, verbose=verbose)
-            for index, listing in enumerate(listings, start=1)
-        ]
+        listings = detail_mod.visit_all_listings(
+            session, listings, delay=delay, verbose=verbose
+        )
 
     listings.sort(key=_price_sort_key)
     rows = [flatten.flatten_listing(listing) for listing in listings]
@@ -145,22 +163,6 @@ def scrape(
         rows=rows,
         domain=domain,
     )
-
-
-def _fetch_one_detail(
-    session: requests.Session,
-    listing: dict[str, Any],
-    index: int,
-    total: int,
-    *,
-    delay: float,
-    verbose: bool,
-) -> dict[str, Any]:
-    if verbose:
-        logger.info("detail %d/%d: %s", index, total, listing["url"])
-    slug = listing.get("slug", listing["url"].rsplit("/", 2)[-2])
-    record = detail_mod.fetch_detail(session, slug, listing["carId"], delay=delay)
-    return {**listing, **record, "url": listing["url"]}
 
 
 def _price_sort_key(listing: dict[str, Any]) -> tuple[int, float]:

@@ -106,6 +106,7 @@ def scrape(
     mileage_to: int | None = None,   # km, inclusive
     year_from: int | None = None,    # first-registration year, inclusive
     year_to: int | None = None,      # first-registration year, inclusive
+    max_results: int | None = None, # cap listings collected/detail-visited; total_elements is unaffected
     delay: float = 1.0,              # seconds between HTTP requests
     verbose: bool = True,            # emit progress via the "autolina_scraper" logger at INFO level
     session: requests.Session | None = None,  # reuse a session across calls if given
@@ -114,12 +115,55 @@ def scrape(
 ```
 
 Raises `ValueError` immediately (before any network call) if any `_from` is
-greater than its `_to`, or if `domain`/`category` isn't the one supported
-value. Raises `ValueError` if `make`/`model` can't be resolved (the message
-lists valid models for an unknown-model error). Raises `requests`
-exceptions on unrecoverable network errors, and
-`autolina_scraper.http.ChallengeDetectedError` if a Cloudflare challenge is
-unexpectedly encountered.
+greater than its `_to`, if `max_results` isn't positive, or if
+`domain`/`category` isn't the one supported value. Raises `ValueError` if
+`make`/`model` can't be resolved (the message lists valid models for an
+unknown-model error). Raises `requests` exceptions on unrecoverable network
+errors, and `autolina_scraper.http.ChallengeDetectedError` if a Cloudflare
+challenge is unexpectedly encountered.
+
+### Capping cost: `max_results`, or splitting search from detail
+
+A plain, unfiltered `scrape()` call can return hundreds of listings, each
+costing one extra request in the detail phase (at `delay` seconds apart) —
+expensive for periodic/scheduled scanning. Two ways to bound that, matching
+the two approaches the AutoScout24 and `ricardo-scraper` siblings each took:
+
+- **`max_results`** (simplest): caps how many listings are collected and,
+  if `detail=True`, visited for their full record. `total_elements` always
+  reflects the site's true full count regardless. Pagination itself stops
+  early once enough candidates are in hand, so a narrow `max_results` also
+  saves search-phase requests, not just detail-phase ones. Listings are
+  collected in whatever order autolina.ch's search returns them in — **not**
+  guaranteed to be price- or date-sorted — so this is a cost cap, not a
+  "top N by some criterion" selector.
+- **Split search from detail** (more control): `autolina_scraper.search_listings()`
+  and `autolina_scraper.visit_all_listings()` are the same two phases
+  `scrape()` composes internally, exposed standalone — mirroring the
+  AutoScout24 reference's own `search_listings()`/`visit_all_listings()` split.
+  Fetch the cheap summary phase, sort/filter/slice the candidate list
+  yourself (cheapest first, newest `carId` first, whatever suits you), then
+  only run `visit_all_listings()` on the ones actually worth a detail visit:
+
+  ```python
+  from autolina_scraper import search_listings, visit_all_listings
+  from autolina_scraper.http import new_session
+
+  session = new_session()
+  total, listings = search_listings(session, "vw", "tiguan", max_results=200)
+  listings.sort(key=lambda listing: listing["price"] or 0)
+  enriched = visit_all_listings(session, listings[:10])
+  ```
+
+  `search_listings(session, make_key, model_key, *, query=None, delay=1.0,
+  verbose=True, max_results=None) -> (total, listings)` takes resolved make/model
+  **slugs**, not display names — resolve them first via
+  `autolina_scraper.catalog.resolve_make`/`resolve_model` (offline, needs the
+  sitemap fetched via `fetch_make_slugs`/`fetch_make_model_slugs` first) or
+  `probe_make`/`probe_model` (live fallback) if you want the same forgiving
+  name-or-slug matching `scrape()` does. `visit_all_listings(session, listings,
+  *, delay=1.0, verbose=True) -> listings` takes summary dicts (each needs at
+  least `carId` and `url`) and returns them with detail fields merged on top.
 
 ### Differences from `autoscout24-scraper`
 
@@ -133,6 +177,7 @@ own site allows, but there are real, deliberate differences:
 | `domain` other than the default | Accepted as a parameter (untested) | **Not supported** — autolina.ch only exists for `ch`; raises `ValueError` |
 | Extra filters beyond price/mileage/year | None | None shipped in v1 — see below |
 | Default `delay` | `0.4`s | `1.0`s — full HTML pages, more conservative |
+| Capping detail-fetch cost | `search_listings()`/`visit_all_listings()` split only | Both: `max_results` on `scrape()`, **and** the same `search_listings()`/`visit_all_listings()` split |
 
 **On extra filters:** autolina.ch's search page visibly offers more filter
 dimensions than price/mileage/year (body type, fuel type, transmission,
@@ -267,11 +312,12 @@ In full detail mode this is typically 40-55 columns, varying by listing; with
 |---|---|---|
 | `htmlparse` (`label_value_pairs`, `slugify_label`, `equipment_sections`, `clean_text`) | Every branch: single/multi-value rows, missing labels/values, umlaut transliteration | Implicitly, via real fixtures |
 | `catalog` (`resolve_make`/`resolve_model`, sitemap parsing) | Exact slug, case-insensitivity, substring fallback, ambiguous-match and not-found errors, malformed sitemap entries | Real make/model resolution |
-| `search` (`fetch_listings`, `_parse_card`, `build_query`) | Pagination + de-dup, stable stopping conditions, every filter combination, real-fixture field extraction | Real result counts, real filter narrowing |
-| `detail` (`fetch_detail`, dealer/image/posting-meta extraction) | Every extractor, both a new-car and a used-car real fixture | Real detail fetch |
+| `search` (`fetch_listings`, `_parse_card`, `build_query`) | Pagination + de-dup, stable stopping conditions, `max_results` (single-page and cross-page early stop, no spurious pagination-shift warning), every filter combination, real-fixture field extraction | Real result counts, real filter narrowing |
+| `detail` (`fetch_detail`, `visit_all_listings`, dealer/image/description/ad-title/posting-meta extraction) | Every extractor, a new-car, a used-car, and a description-bearing private-seller real fixture | Real detail fetch |
 | `http` (`get`, retry/backoff, challenge detection) | Retry-then-succeed and exhausted-retries paths for 429/5xx/connection errors, no retry on 4xx, Cloudflare-challenge detection | — |
 | `flatten`/`io` (`flatten_listing`, `order_fieldnames`, `save_csv`/`save_json`) | Every branch (nested dicts, lists, missing/heterogeneous fields), unicode, empty input | Implicitly, via real data |
-| `orchestrate` (`scrape()`) | Range validation, domain/category validation, catalog-to-search-to-detail wiring, price sort, unknown make/model errors | Full real pipeline, with and without `--detail` |
-| `cli` (`run_cli`/`main`) | Every flag, default vs. custom output filenames, all exit-code paths | Real subprocess run, real error exit code |
+| `orchestrate` (`scrape()`) | Range and `max_results` validation, domain/category validation, catalog-to-search-to-detail wiring, `max_results` capping the detail phase, price sort, unknown make/model errors | Full real pipeline, with and without `--detail` |
+| `cli` (`run_cli`/`main`) | Every flag including `--max-results`, default vs. custom output filenames, all exit-code paths | Real subprocess run, real error exit code |
+| top-level package API | Every `autolina_scraper.__all__` export resolves to the expected underlying function | — |
 
 The unit suite covers 100% of `src/autolina_scraper/`.

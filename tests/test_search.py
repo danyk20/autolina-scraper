@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+
+import pytest
 import responses
 
 from autolina_scraper import htmlparse, http, search
@@ -104,6 +107,70 @@ def test_fetch_listings_stops_on_page_with_no_cards() -> None:
     assert total == 0
     assert listings == []
     assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_fetch_listings_max_results_caps_within_a_single_page() -> None:
+    html = _page_html(5, [1, 2, 3, 4, 5])
+    responses.add(responses.GET, "https://www.autolina.ch/vw/tiguan", body=html, status=200)
+
+    total, listings = search.fetch_listings(
+        http.new_session(), "vw", "tiguan", delay=0, max_results=2
+    )
+
+    assert total == 5  # the site's true total is unaffected by the cap
+    assert len(listings) == 2
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_fetch_listings_max_results_stops_pagination_early() -> None:
+    page1 = _page_html(10, [1, 2])
+    page2 = _page_html(10, [3, 4])
+    responses.add(responses.GET, "https://www.autolina.ch/vw/tiguan", body=page1, status=200)
+    responses.add(
+        responses.GET, "https://www.autolina.ch/vw/tiguan/page/2", body=page2, status=200
+    )
+
+    total, listings = search.fetch_listings(
+        http.new_session(), "vw", "tiguan", delay=0, max_results=3
+    )
+
+    assert total == 10
+    assert len(listings) == 3
+    assert len(responses.calls) == 2  # never requested page 3, despite total=10
+
+
+@responses.activate
+def test_fetch_listings_max_results_does_not_log_a_spurious_pagination_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    html = _page_html(50, [1, 2])
+    responses.add(responses.GET, "https://www.autolina.ch/vw/tiguan", body=html, status=200)
+
+    with caplog.at_level(logging.WARNING, logger="autolina_scraper"):
+        search.fetch_listings(http.new_session(), "vw", "tiguan", delay=0, max_results=2)
+
+    assert not any("pagination likely shifted" in record.getMessage() for record in caplog.records)
+
+
+@responses.activate
+def test_fetch_listings_without_max_results_still_warns_on_real_pagination_shift(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Site reports 3, but only 2 unique listings ever turn up (e.g. a boosted
+    # listing reshuffled into view twice) — a genuine anomaly, not a cap.
+    page1 = _page_html(3, [1, 2])
+    page2 = _page_html(3, [2])
+    responses.add(responses.GET, "https://www.autolina.ch/vw/tiguan", body=page1, status=200)
+    responses.add(
+        responses.GET, "https://www.autolina.ch/vw/tiguan/page/2", body=page2, status=200
+    )
+
+    with caplog.at_level(logging.WARNING, logger="autolina_scraper"):
+        search.fetch_listings(http.new_session(), "vw", "tiguan", delay=0)
+
+    assert any("pagination likely shifted" in record.getMessage() for record in caplog.records)
 
 
 @responses.activate

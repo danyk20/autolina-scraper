@@ -125,6 +125,40 @@ def test_scrape_rejects_inverted_year_range() -> None:
         scrape("vw", "tiguan", year_from=2022, year_to=2018)
 
 
+def test_scrape_rejects_non_positive_max_results() -> None:
+    with pytest.raises(ValueError, match="max_results"):
+        scrape("vw", "tiguan", max_results=0)
+
+
+@responses.activate
+def test_scrape_max_results_caps_listings_and_only_detail_visits_those() -> None:
+    _register_catalog(["vw"], {"vw": ["tiguan"]})
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/vw/tiguan",
+        body=_search_page_html(5, [(1, 10000), (2, 20000), (3, 30000), (4, 40000), (5, 50000)]),
+    )
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/auto/vw-tiguan/1",
+        body=_detail_page_html(1, "ABC001"),
+    )
+    responses.add(
+        responses.GET,
+        "https://www.autolina.ch/auto/vw-tiguan/2",
+        body=_detail_page_html(2, "ABC002"),
+    )
+
+    result = scrape("vw", "tiguan", max_results=2, delay=0)
+
+    assert result.total_elements == 5  # true site total, unaffected by the cap
+    assert len(result.listings) == len(result.rows) == 2
+    assert {listing["carId"] for listing in result.listings} == {1, 2}
+    # only 2 detail requests fired, not 5 — the whole point of the cap
+    detail_calls = [c for c in responses.calls if "/auto/" in c.request.url]
+    assert len(detail_calls) == 2
+
+
 def test_scrape_rejects_unsupported_domain() -> None:
     with pytest.raises(ValueError, match="domain"):
         scrape("vw", "tiguan", domain="de")

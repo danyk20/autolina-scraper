@@ -79,12 +79,21 @@ def fetch_listings(
     query: dict[str, str] | None = None,
     delay: float = 1.0,
     verbose: bool = True,
+    max_results: int | None = None,
 ) -> tuple[int, list[dict[str, Any]]]:
-    """Return ``(reported_total, deduplicated_listings)`` for a make/model search."""
+    """Return ``(reported_total, deduplicated_listings)`` for a make/model search.
+
+    *reported_total* is always the site's true full count, even when
+    *max_results* caps how many listings are actually collected — pagination
+    stops as soon as enough unique listings are in hand, so a narrow
+    ``max_results`` also saves search-phase requests, not just the caller's
+    own downstream (typically detail-fetch) work.
+    """
     query = query or {}
     listings_by_id: dict[int, dict[str, Any]] = {}
     reported_total = 0
     page = 1
+    capped = False
 
     while True:
         url = f"{BASE_URL}/{make_key}/{model_key}" + (f"/page/{page}" if page > 1 else "")
@@ -114,11 +123,14 @@ def fetch_listings(
                 reported_total,
             )
 
+        if max_results is not None and len(listings_by_id) >= max_results:
+            capped = True
+            break
         if new_count == 0 or len(listings_by_id) >= reported_total:
             break
         page += 1
 
-    if len(listings_by_id) != reported_total:
+    if not capped and len(listings_by_id) != reported_total:
         logger.warning(
             "collected %d unique listings but the site reported %d — "
             "pagination likely shifted while scraping (promoted listings can "
@@ -127,7 +139,10 @@ def fetch_listings(
             reported_total,
         )
 
-    return reported_total, list(listings_by_id.values())
+    listings = list(listings_by_id.values())
+    if max_results is not None:
+        listings = listings[:max_results]
+    return reported_total, listings
 
 
 def _parse_result_count(tree: HTMLParser) -> int:

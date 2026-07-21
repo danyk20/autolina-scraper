@@ -38,6 +38,30 @@ def test_no_detail_flag_maps_to_detail_false(monkeypatch: pytest.MonkeyPatch) ->
     assert captured["detail"] is False
 
 
+def test_max_results_flag_is_passed_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    def fake_scrape(make, model, **kwargs):
+        captured.update(kwargs)
+        return ScrapeResult("vw", "VW", "tiguan", "TIGUAN", "car", 0, [], [], "ch")
+
+    monkeypatch.setattr(cli, "scrape", fake_scrape)
+    cli.run_cli(["--make", "vw", "--model", "tiguan", "--max-results", "25"])
+    assert captured["max_results"] == 25
+
+
+def test_max_results_defaults_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    def fake_scrape(make, model, **kwargs):
+        captured.update(kwargs)
+        return ScrapeResult("vw", "VW", "tiguan", "TIGUAN", "car", 0, [], [], "ch")
+
+    monkeypatch.setattr(cli, "scrape", fake_scrape)
+    cli.run_cli(["--make", "vw", "--model", "tiguan"])
+    assert captured["max_results"] is None
+
+
 def test_run_cli_writes_csv_and_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     def fake_scrape(make, model, **kwargs):
         return ScrapeResult(

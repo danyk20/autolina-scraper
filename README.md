@@ -71,6 +71,7 @@ directory. Installed via `pip install` instead? The same command is
 | `--price-from` / `--price-to` | Filter by price in CHF (inclusive, either end optional) |
 | `--mileage-from` / `--mileage-to` | Filter by mileage in km (inclusive, either end optional) |
 | `--year-from` / `--year-to` | Filter by first-registration year (inclusive, either end optional) |
+| `--max-results` | Cap the number of listings collected/detail-visited (default: unlimited) |
 | `-v` / `--verbose` | Also show debug-level detail (mutually exclusive with `-q`) |
 | `-q` / `--quiet` | Suppress progress output; only warnings/errors (mutually exclusive with `-v`) |
 
@@ -85,6 +86,10 @@ pipenv run autolina-scraper --make VW --model Tiguan --no-detail
 
 # 2018 or newer, under CHF 30'000, under 60'000 km
 pipenv run autolina-scraper --make VW --model Tiguan --price-to 30000 --year-from 2018 --mileage-to 60000
+
+# A broad, unfiltered search can run into the hundreds of listings — each an
+# extra request in the detail phase. Cap it:
+pipenv run autolina-scraper --make VW --model Tiguan --max-results 50
 ```
 
 ### As a library
@@ -102,6 +107,33 @@ for row in result.rows:          # list[dict], CSV-ready
     print(row["price"], row["mileage"], row["url"])
 
 result.to_csv("vw_tiguan.csv")   # optional — no files are written unless you ask
+```
+
+A plain, unfiltered search can easily run into the hundreds of listings —
+`max_results` caps how many get a (comparatively expensive) detail-page visit,
+without affecting `total_elements` (the site's true full count):
+
+```python
+result = scrape("VW", "Tiguan", max_results=50)
+```
+
+Need more control over *which* listings are worth a detail visit — cheapest
+first, only what changed since your last run, whatever suits your use case?
+Use the search and detail phases separately instead of the single `scrape()`
+call, mirroring the AutoScout24 reference's own
+`search_listings()`/`visit_all_listings()` split:
+
+```python
+from autolina_scraper import search_listings, visit_all_listings
+from autolina_scraper.http import new_session
+
+session = new_session()
+total, listings = search_listings(session, "vw", "tiguan", max_results=200)
+
+listings.sort(key=lambda listing: listing["price"] or 0)
+cheapest_ten = listings[:10]
+
+enriched = visit_all_listings(session, cheapest_ten)  # only 10 detail requests
 ```
 
 Full `scrape()` signature, the `ScrapeResult` return type, the complete field

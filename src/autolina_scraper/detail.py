@@ -8,10 +8,17 @@ both equipment lists, the dealer/seller card, the image gallery, the seller's
 free-text description (``.description-row`` — only present on some listings,
 mostly private-seller ones; dealer-posted listings usually skip it), the ad's
 own headline (``.title-row h2``), and the posted-date/view-count line.
+
+``visit_all_listings`` is the standalone "detail phase" step — split out from
+`autolina_scraper.orchestrate.scrape` so a caller can sort/slice the search
+phase's candidate list (e.g. cap to the first N) before paying for detail
+visits, mirroring the AutoScout24 reference's own
+``search_listings()``/``visit_all_listings()`` split.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -20,6 +27,8 @@ from selectolax.parser import HTMLParser
 
 from autolina_scraper import htmlparse, http
 from autolina_scraper.catalog import BASE_URL
+
+logger = logging.getLogger("autolina_scraper")
 
 _ROW_SELECTOR = ".details-row, .sub-details-grid, .energy-data-row .row-container"
 _IMAGE_NUMBER_RE = re.compile(r"_(\d+)\.jpg$")
@@ -74,6 +83,34 @@ def fetch_detail(
 
     data.update(_extract_posting_meta(html))
     return data
+
+
+def visit_all_listings(
+    session: requests.Session,
+    listings: list[dict[str, Any]],
+    *,
+    delay: float = 1.0,
+    verbose: bool = True,
+) -> list[dict[str, Any]]:
+    """Fetch the full detail record for every listing in *listings* (each must
+    already have ``carId`` and ``url``, e.g. from
+    `autolina_scraper.search.fetch_listings`), merging each detail record on
+    top of its summary fields.
+
+    Exposed as its own step — rather than only reachable via
+    ``scrape(..., detail=True)`` — so a caller can decide *which* listings are
+    worth the cost of a detail visit (sort by price/mileage, cap to the first
+    N, whatever suits them) instead of paying for every search result.
+    """
+    total = len(listings)
+    enriched = []
+    for index, listing in enumerate(listings, start=1):
+        if verbose:
+            logger.info("detail %d/%d: %s", index, total, listing["url"])
+        slug = listing.get("slug", listing["url"].rsplit("/", 2)[-2])
+        record = fetch_detail(session, slug, listing["carId"], delay=delay)
+        enriched.append({**listing, **record, "url": listing["url"]})
+    return enriched
 
 
 def _extract_dealer(tree: HTMLParser) -> dict[str, str]:

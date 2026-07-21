@@ -45,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--year-from", type=int, default=None, help="Minimum first-registration year"
     )
     parser.add_argument("--year-to", type=int, default=None, help="Maximum first-registration year")
+    parser.add_argument(
+        "--max-results",
+        type=int,
+        default=None,
+        help="Cap the number of listings collected/detail-visited (default: unlimited)",
+    )
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument(
@@ -83,6 +89,7 @@ def run_cli(argv: list[str] | None = None) -> int:
             mileage_to=args.mileage_to,
             year_from=args.year_from,
             year_to=args.year_to,
+            max_results=args.max_results,
             delay=args.delay,
             verbose=not args.quiet,
         )
